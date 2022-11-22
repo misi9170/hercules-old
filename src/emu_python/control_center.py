@@ -33,6 +33,32 @@ class ControlCenter(federateagent):
 
         # Uncomment if running local
         # self.amr_wind_folder = 'local_amr_wind_demo'
+
+        self.run_closed_loop_control = True
+
+        if self.run_closed_loop_control:
+            # will require a local pip install
+            from amryc.amrwind_yaw_simulator import AMRWindYawControl
+            
+            # Hardcode some parameters from the simulation case:
+            # TODO: read these from amr input file?
+            yaw_lookup_table_file = 'df_opt.p'
+            num_turbs = 8
+            wd_init = 200
+            wake_steering_on = True
+
+            df_opt = pd.read_pickle(
+                os.path.join(self.amr_wind_folder, yaw_lookup_table_file)
+            )
+
+            # Set up wind farm controller
+            self.wfc = AMRWindYawControl(
+                df_opt=df_opt,
+                num_turbs=num_turbs,
+                dt=1,
+                wd_init=wd_init,
+                wake_steer=wake_steering_on
+            )
         
         # self.num_turbines = 8 
         self.time_delta = 1.
@@ -293,6 +319,18 @@ class ControlCenter(federateagent):
                 print("Did not get any subs!! ", tmp)
                 sim_time_s_amr_wind, wind_speed_amr_wind, wind_direction_amr_wind = [0,0,0]
                 turbine_power_array = np.zeros(self.num_turbines).tolist()
+            
+            # Pass information to closed-loop controller, produce actions
+            if self.run_closed_loop_control:
+                self.turbine_yaw_angles = \
+                    self.wfc.step_closedloop_yaw_system(turbine_wd_array, None)
+            else:
+                # TODO: what should the open-loop behavior be?
+                # self.turbine_yaw_angles = turbine_wd_array
+                self.turbine_yaw_angles = np.array(
+                    [270 for t in range(self.num_turbines)]
+                )
+                self.turbine_yaw_angles[1] = 260
 
             # self.zmq_server.send(np.array([self.wind_speed, self.wind_direction]))
             self.process_periodic_publication()
@@ -347,10 +385,10 @@ class ControlCenter(federateagent):
         self.get_signals_from_front_end()
         self.set_wind_speed_direction()
 
-        yaw_angles = [270 for t in range(self.num_turbines)]
-        yaw_angles[1] = 260
-
-        tmp = np.array([self.get_currenttime(),self.wind_speed, self.wind_direction] + yaw_angles).tolist()
+        tmp = np.array(
+            [self.get_currenttime(), self.wind_speed, self.wind_direction] + \
+             self.turbine_yaw_angles.tolist()
+        ).tolist()
 
         print("publishing  ", tmp)
 
