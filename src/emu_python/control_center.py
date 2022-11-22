@@ -28,8 +28,10 @@ class ControlCenter(federateagent):
         self.config_dict = config_dict
         # Parameters
 
+        print('Initialized this control_center.py')
+
         # Running on eagle
-        self.amr_wind_folder = '/scratch/pfleming/c2c/amr_wind_demo'
+        self.amr_wind_folder = '/scratch/msinner/c2c/amr_wind_demo'
 
         # Uncomment if running local
         # self.amr_wind_folder = 'local_amr_wind_demo'
@@ -44,12 +46,13 @@ class ControlCenter(federateagent):
             # TODO: read these from amr input file?
             yaw_lookup_table_file = 'df_opt.p'
             num_turbs = 8
-            wd_init = 200
+            wd_init = 255
             wake_steering_on = True
 
             df_opt = pd.read_pickle(
                 os.path.join(self.amr_wind_folder, yaw_lookup_table_file)
             )
+            #df_opt = pd.read_pickle(yaw_lookup_table_file)
 
             # Set up wind farm controller
             self.wfc = AMRWindYawControl(
@@ -274,7 +277,13 @@ class ControlCenter(federateagent):
         
         # Get wind speed and direction from front end
         self.logger.info("Waiting for intial wind speed and wind direction from front end")
-        self.get_signals_from_front_end()
+        if self.run_closed_loop_control:
+            # TODO: what happens to these with precurser?
+            self.wind_speed_front_end = 8.0
+            self.wind_direction_front_end = 270.0
+            self.input_method = 'dash'
+        else:
+            self.get_signals_from_front_end()
 
         # Set the wind speed and direction based on input mode
         self.set_wind_speed_direction()
@@ -292,7 +301,6 @@ class ControlCenter(federateagent):
         # Inside a while loop # TODO ADD STOP CONDITION
         # while True:         
         while self.currenttime < (self.endtime - self.starttime  + 1 ):
-
  
             # Recieve the time step turbine powers and echoed wind speed and direction
             # (Note on first call this will be mostly uninitialized information to be ignored)
@@ -324,6 +332,9 @@ class ControlCenter(federateagent):
             if self.run_closed_loop_control:
                 self.turbine_yaw_angles = \
                     self.wfc.step_closedloop_yaw_system(turbine_wd_array, None)
+                print("controllerYaw:", self.turbine_yaw_angles)
+                if sim_time_s_amr_wind >= 100:
+                    self.wind_direction_front_end = 247.0
             else:
                 # TODO: what should the open-loop behavior be?
                 # self.turbine_yaw_angles = turbine_wd_array
@@ -382,7 +393,10 @@ class ControlCenter(federateagent):
     def process_periodic_publication(self):
         # Periodically publish data to the surrpogate   
 
-        self.get_signals_from_front_end()
+        if self.run_closed_loop_control:
+            pass
+        else:
+            self.get_signals_from_front_end()
         self.set_wind_speed_direction()
 
         tmp = np.array(
